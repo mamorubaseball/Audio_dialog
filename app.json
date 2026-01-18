@@ -2,6 +2,10 @@
   "expo": {
     "name": "VoiceDiary",
     "slug": "VoiceDiary",
+    "scheme": [
+      "voicediary",
+      "com.googleusercontent.apps.1073408347006-358q6mab6l9k8160a9879rieka7moqtk"
+    ],
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -13,8 +17,18 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mamoru.voicediary",
+      "infoPlist": {
+        "NSSpeechRecognitionUsageDescription": "This app uses speech recognition to transcribe your voice diary entries into text.",
+        "NSMicrophoneUsageDescription": "This app needs access to your microphone to record your voice diary entries."
+      }
     },
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      "@react-native-voice/voice"
+    ],
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",

@@ -1,0 +1,45 @@
+import * as Google from 'expo-auth-session/providers/google';
+import * as WebBrowser from 'expo-web-browser';
+import * as SecureStore from 'expo-secure-store';
+import { makeRedirectUri } from 'expo-auth-session';
+
+WebBrowser.maybeCompleteAuthSession();
+
+const IosClientId = '1073408347006-358q6mab6l9k8160a9879rieka7moqtk.apps.googleusercontent.com';
+const STORAGE_KEY = 'google_auth_token';
+
+export interface AuthToken {
+    accessToken: string;
+    refreshToken?: string;
+    expiryDate?: number;
+}
+
+export const GoogleAuthService = {
+    useGoogleAuth() {
+        // Since we don't have an Android/Web ID yet, we'll just use iOS for now or leave others undefined
+        const [request, response, promptAsync] = Google.useAuthRequest({
+            iosClientId: IosClientId,
+            // androidClientId: '...',
+            scopes: ['https://www.googleapis.com/auth/drive.file'],
+            redirectUri: makeRedirectUri({
+                scheme: `com.googleusercontent.apps.${IosClientId.split('.apps.')[0]}`
+            })
+        });
+
+        return { request, response, promptAsync };
+    },
+
+    async saveToken(token: AuthToken) {
+        await SecureStore.setItemAsync(STORAGE_KEY, JSON.stringify(token));
+    },
+
+    async getToken(): Promise<AuthToken | null> {
+        const json = await SecureStore.getItemAsync(STORAGE_KEY);
+        if (!json) return null;
+        return JSON.parse(json);
+    },
+
+    async logout() {
+        await SecureStore.deleteItemAsync(STORAGE_KEY);
+    }
+};
