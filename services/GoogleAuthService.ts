@@ -5,7 +5,7 @@ import { makeRedirectUri } from 'expo-auth-session';
 
 WebBrowser.maybeCompleteAuthSession();
 
-const IosClientId = '1073408347006-358q6mab6l9k8160a9879rieka7moqtk.apps.googleusercontent.com';
+const IosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '';
 const STORAGE_KEY = 'google_auth_token';
 
 export interface AuthToken {
