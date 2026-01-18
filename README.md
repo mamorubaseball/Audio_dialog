@@ -1,6 +1,6 @@
 # Voice Diary App
 
-**コンセプト**: ウィジェット1タップで音声で感情を吐き出し、習慣化を可視化する日記アプリ。
+**コンセプト**: 音声で日記を作り、自動でGoogle連携するアプリ。ウィジェット1タップで感情を吐き出し、習慣化を可視化します。
 **技術スタック**: React Native (Expo), TypeScript, NativeWind, SQLite, Expo AV.
 
 ## 機能一覧 (Phase 1 MVP)
