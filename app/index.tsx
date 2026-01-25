@@ -149,6 +149,14 @@ export default function Home() {
 
             // Start Voice first or parallel
             try {
+                // Ensure audio mode is set for recording BEFORE starting Voice
+                // This prevents "Input HW format and tap format not matching" errors
+                await Audio.setAudioModeAsync({
+                    allowsRecordingIOS: true,
+                    playsInSilentModeIOS: true,
+                    staysActiveInBackground: true,
+                });
+
                 setRealtimeText("");
                 try {
                     await Voice.stop(); // Ensure clean state
@@ -301,7 +309,17 @@ export default function Home() {
             </View>
 
             <View className="flex-1 px-6 pb-8">
-                <Text className="text-lg font-bold text-slate-700 mb-4">Recent Entries</Text>
+                <View className="flex-row justify-between items-center mb-4">
+                    <Text className="text-lg font-bold text-slate-700">Recent Entries</Text>
+                    <TouchableOpacity
+                        onPress={handleToggleRecording}
+                        className={`px-3 py-1.5 rounded-full ${isRecording ? 'bg-red-100' : 'bg-slate-200'}`}
+                    >
+                        <Text className={`text-xs font-bold ${isRecording ? 'text-red-600' : 'text-slate-600'}`}>
+                            {isRecording ? "Stop ⏹" : "Quick Rec 🔴"}
+                        </Text>
+                    </TouchableOpacity>
+                </View>
                 <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
                     {entries.slice(0, 10).map(e => (
                         <View key={e.id} className="flex-row justify-between items-center p-4 mb-3 bg-white rounded-xl shadow-sm border border-slate-100">
