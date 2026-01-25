@@ -1,33 +1,34 @@
-import { View, Text, TouchableOpacity, ScrollView, Alert, Dimensions, StyleSheet } from 'react-native';
-import { Link, useFocusEffect } from 'expo-router';
-import { useCallback, useState, useEffect } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, Alert, Dimensions, StyleSheet, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useState, useEffect, useRef } from 'react';
 import * as Linking from 'expo-linking';
+import { Ionicons } from '@expo/vector-icons';
 import { AudioRecorderService } from '../services/AudioRecorderService';
 import { EntryService, Entry } from '../services/EntryService';
 import ContributionGraph from '../components/ContributionGraph';
+import NeumorphicMicButton from '../components/NeumorphicMicButton';
+import BottomInputBar from '../components/BottomInputBar';
 import { Audio } from 'expo-av';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
 
 import { GoogleAuthService, AuthToken } from '../services/GoogleAuthService';
-import { GoogleDriveService } from '../services/GoogleDriveService';
 import { SyncService } from '../services/SyncService';
 import Voice from '@react-native-voice/voice';
-import * as FileSystem from 'expo-file-system/legacy'; // Use legacy for writeAsStringAsync
 
 export default function Home() {
+    const router = useRouter();
     const [entries, setEntries] = useState<Entry[]>([]);
     const [recording, setRecording] = useState<Audio.Recording | null>(null);
     const [isRecording, setIsRecording] = useState(false);
-    const [recordingDuration, setRecordingDuration] = useState(0);
     const [sound, setSound] = useState<Audio.Sound | null>(null);
     const [playingId, setPlayingId] = useState<string | null>(null);
     const [userToken, setUserToken] = useState<AuthToken | null>(null);
     const [syncing, setSyncing] = useState(false);
 
     // Transcription State
-    const [transcribedText, setTranscribedText] = useState('');
     const [realtimeText, setRealtimeText] = useState('');
+    const scrollViewRef = useRef<ScrollView>(null);
 
     const { request, response, promptAsync } = GoogleAuthService.useGoogleAuth();
 
@@ -47,7 +48,7 @@ export default function Home() {
                 };
                 GoogleAuthService.saveToken(token);
                 setUserToken(token);
-                Alert.alert("Connected", "Linked to Google Drive successfully!");
+                Alert.alert("接続完了", "Googleドライブと連携しました。");
             }
         }
     }, [response]);
@@ -68,8 +69,7 @@ export default function Home() {
         Voice.onSpeechError = (e: any) => {
             console.error('Speech Error:', JSON.stringify(e, null, 2));
             if (e.error?.message) {
-                // Common errors: "7/No match" (silence), "5/Client side error", "203/Retry"
-                setRealtimeText(`Error: ${e.error.message}`);
+                setRealtimeText(`エラー: ${e.error.message}`);
             }
         };
 
@@ -128,29 +128,22 @@ export default function Home() {
 
             // Finalize text
             const finalDocText = realtimeText || "";
-            setTranscribedText(""); // Clear UI
             setRealtimeText("");
 
             if (result) {
                 await EntryService.addEntry(result.durationMillis / 1000, result.uri, finalDocText);
                 loadEntries();
-                Alert.alert("Saved", "Voice diary saved successfully.");
-
-                // Auto-Upload Removed - Batch Sync is now used
             }
         } else {
             // Start
             const hasPermission = await AudioRecorderService.requestPermissions();
-            // Note: Voice permission is requested automatically on start() on iOS usually, or we can check
             if (!hasPermission) {
-                Alert.alert("Permission Required", "Microphone access is needed.");
+                Alert.alert("マイクの許可", "録音にはマイクへのアクセスが必要です。");
                 return;
             }
 
             // Start Voice first or parallel
             try {
-                // Ensure audio mode is set for recording BEFORE starting Voice
-                // This prevents "Input HW format and tap format not matching" errors
                 await Audio.setAudioModeAsync({
                     allowsRecordingIOS: true,
                     playsInSilentModeIOS: true,
@@ -159,18 +152,12 @@ export default function Home() {
 
                 setRealtimeText("");
                 try {
-                    await Voice.stop(); // Ensure clean state
-                } catch (e) {
-                    // Ignore stop error if not running
-                }
-                await new Promise(resolve => setTimeout(resolve, 100)); // Small delay
+                    await Voice.stop();
+                } catch (e) { }
+                await new Promise(resolve => setTimeout(resolve, 100));
                 await Voice.start('ja-JP');
             } catch (e: any) {
                 console.error("Voice start error", e);
-                if (e.message && !e.message.includes('already started')) {
-                    // Only alert if it's a real error, not just a state mismatch
-                    // Alert.alert("Voice Error", "Could not start speech recognition.");
-                }
             }
 
             const newRecording = await AudioRecorderService.startRecording();
@@ -181,7 +168,27 @@ export default function Home() {
         }
     };
 
+    const [inputText, setInputText] = useState('');
+
+    const handleTextSubmit = async () => {
+        if (!inputText.trim()) return;
+
+        const textToSave = inputText.trim();
+        setInputText(''); // Clear immediately
+        Keyboard.dismiss(); // Dismiss keyboard
+
+        try {
+            await EntryService.addEntry(0, "", textToSave);
+            loadEntries();
+        } catch (e) {
+            console.error("Failed to save text entry", e);
+            Alert.alert("エラー", "保存できませんでした。");
+        }
+    };
+
     const playSound = async (uri: string, id: string) => {
+        if (!uri) return; // Handle text-only entries safely
+
         if (sound) {
             await sound.unloadAsync();
             setSound(null);
@@ -201,13 +208,13 @@ export default function Home() {
             });
         } catch (e) {
             console.error("Playback failed", e);
-            Alert.alert("Error", "Could not play audio file.");
+            Alert.alert("エラー", "音声を再生できませんでした。");
         }
     };
 
     const handleSync = async () => {
         if (!userToken) {
-            Alert.alert("Connect Drive", "Please connect to Google Drive first.");
+            Alert.alert("Googleドライブ接続", "まずはGoogleドライブに接続してください。");
             return;
         }
 
@@ -216,143 +223,153 @@ export default function Home() {
             const { syncedCount, errors } = await SyncService.syncPendingEntries();
 
             if (errors.length > 0) {
-                Alert.alert("Sync Completed with Errors", `Synced: ${syncedCount}\nErrors:\n${errors.slice(0, 3).join('\n')}`);
+                Alert.alert("同期エラー", `同期済み: ${syncedCount}件\nエラー:\n${errors.slice(0, 3).join('\n')}`);
             } else if (syncedCount > 0) {
-                Alert.alert("Sync Complete", `Successfully uploaded ${syncedCount} entries.`);
+                Alert.alert("同期完了", `${syncedCount}件の日記をドライブに保存しました。`);
             } else {
-                Alert.alert("Up to Date", "No new entries to sync.");
+                Alert.alert("同期完了", "新しい日記はありません。");
             }
-            loadEntries(); // Refresh list to show synced status (if we add icon later)
+            loadEntries();
         } catch (e: any) {
-            Alert.alert("Sync Failed", e.message);
+            if (e.message && (e.message.includes('invalid') || e.message.includes('revoked') || e.message.includes('grant'))) {
+                Alert.alert("セッション期限切れ", "Googleドライブに再接続してください。", [
+                    { text: "OK", onPress: () => { GoogleAuthService.logout(); setUserToken(null); } }
+                ]);
+            } else {
+                Alert.alert("同期失敗", e.message);
+            }
         } finally {
             setSyncing(false);
         }
     };
 
     return (
-        <View className="flex-1 bg-[#F5F5FA] pt-12">
-            <View className="flex-row justify-between items-center px-6 mb-4">
-                <Text className="text-2xl font-bold text-slate-800 tracking-wide">Voice Diary</Text>
-                <View className="flex-row gap-2">
-                    <TouchableOpacity
-                        onPress={handleSync}
-                        disabled={syncing}
-                        className={`px-3 py-1.5 rounded-full ${syncing ? 'bg-blue-100' : 'bg-blue-500'}`}
-                    >
-                        <Text className={`text-xs font-semibold ${syncing ? 'text-blue-400' : 'text-white'}`}>
-                            {syncing ? "Syncing..." : "Sync ☁️"}
-                        </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        onPress={() => {
-                            if (userToken) {
-                                Alert.alert("Google Drive", "Status: Connected", [
-                                    { text: "Cancel", style: "cancel" },
-                                    {
-                                        text: "Disconnect",
-                                        style: "destructive",
-                                        onPress: async () => {
-                                            await GoogleAuthService.logout();
-                                            setUserToken(null);
-                                            Alert.alert("Disconnected", "Unlinked from Google Drive.");
-                                        }
-                                    }
-                                ]);
-                            } else {
-                                promptAsync();
-                            }
-                        }}
-                        className={`px-3 py-1.5 rounded-full ${userToken ? 'bg-green-100' : 'bg-slate-200'}`}
-                    >
-                        <Text className={`text-xs font-semibold ${userToken ? 'text-green-700' : 'text-slate-600'}`}>
-                            {userToken ? "Drive On ✅" : "Connect Drive"}
-                        </Text>
-                    </TouchableOpacity>
-                </View>
-            </View>
+        <View className="flex-1 bg-[#F8FAFC]">
+            {/* Premium Background Gradient */}
+            <LinearGradient
+                colors={['#F1F5F9', '#CBD5E1']}
+                style={StyleSheet.absoluteFill}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+            />
+            <SafeAreaView className="flex-1" edges={['top']}>
+                <View className="flex-1">
+                    {/* Header */}
+                    <View className="px-6 py-4 flex-row justify-between items-center z-10">
+                        <View>
+                            <Text className="text-xs font-semibold text-slate-500 tracking-widest uppercase mb-1">Voice Diary</Text>
+                            <Text className="text-3xl font-light text-slate-800 tracking-wide">日記</Text>
+                        </View>
 
-            <View className="h-40 mx-4 bg-white rounded-2xl shadow-sm overflow-hidden mb-6">
-                <ContributionGraph entries={entries} />
-            </View>
-
-            <View className="flex-1 items-center justify-center">
-                <TouchableOpacity
-                    onPress={handleToggleRecording}
-                    activeOpacity={0.8}
-                    className="items-center justify-center"
-                    style={{
-                        shadowColor: isRecording ? '#EF4444' : '#3B82F6',
-                        shadowOffset: { width: 0, height: 10 },
-                        shadowOpacity: 0.3,
-                        shadowRadius: 20,
-                        elevation: 10,
-                    }}
-                >
-                    <LinearGradient
-                        colors={isRecording ? ['#FF6B6B', '#EE5253'] : ['#4FACFE', '#00F2FE']}
-                        className="w-28 h-28 rounded-full items-center justify-center border-4 border-white/30"
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                    >
-                        <View className={`w-12 h-12 ${isRecording ? 'bg-white rounded-lg' : 'bg-white/20 rounded-full'}`} />
-                    </LinearGradient>
-                </TouchableOpacity>
-                <Text className="mt-8 text-lg font-medium text-slate-500 tracking-wider">
-                    {isRecording ? "Recording..." : "Tap to Record"}
-                </Text>
-                {isRecording && (
-                    <Text className="mt-4 px-8 text-center text-slate-800 font-medium">
-                        {realtimeText}
-                    </Text>
-                )}
-            </View>
-
-            <View className="flex-1 px-6 pb-8">
-                <View className="flex-row justify-between items-center mb-4">
-                    <Text className="text-lg font-bold text-slate-700">Recent Entries</Text>
-                    <TouchableOpacity
-                        onPress={handleToggleRecording}
-                        className={`px-3 py-1.5 rounded-full ${isRecording ? 'bg-red-100' : 'bg-slate-200'}`}
-                    >
-                        <Text className={`text-xs font-bold ${isRecording ? 'text-red-600' : 'text-slate-600'}`}>
-                            {isRecording ? "Stop ⏹" : "Quick Rec 🔴"}
-                        </Text>
-                    </TouchableOpacity>
-                </View>
-                <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-                    {entries.slice(0, 10).map(e => (
-                        <View key={e.id} className="flex-row justify-between items-center p-4 mb-3 bg-white rounded-xl shadow-sm border border-slate-100">
-                            <View className="flex-row items-center gap-3">
-                                <View className="w-10 h-10 rounded-full bg-blue-50 items-center justify-center">
-                                    <Text className="text-blue-500 text-lg">🎙</Text>
-                                </View>
-                                <View>
-                                    <Text className="text-slate-700 font-semibold text-base">
-                                        {new Date(e.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                                        <Text className="text-slate-400 font-normal ml-2 text-sm">
-                                            {new Date(e.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                        </Text>
-                                    </Text>
-                                    <Text className="font-mono text-xs text-slate-400 mt-1">{Math.round(e.duration)} seconds</Text>
-                                </View>
-                            </View>
+                        <View className="flex-row gap-4">
+                            <TouchableOpacity
+                                onPress={handleSync}
+                                disabled={syncing}
+                                className={`w-10 h-10 rounded-full items-center justify-center shadow-sm ${syncing ? 'bg-blue-100' : 'bg-white/90'}`}
+                            >
+                                <Ionicons name={syncing ? "cloud-upload" : "cloud-outline"} size={20} color={syncing ? "#3B82F6" : "#475569"} />
+                            </TouchableOpacity>
 
                             <TouchableOpacity
-                                onPress={() => playSound(e.audio_path, e.id)}
-                                className="w-10 h-10 rounded-full bg-blue-100 items-center justify-center"
+                                onPress={() => {
+                                    if (userToken) {
+                                        Alert.alert("Google Drive", "接続済み", [
+                                            { text: "キャンセル", style: "cancel" },
+                                            { text: "切断する", style: "destructive", onPress: async () => { await GoogleAuthService.logout(); setUserToken(null); } }
+                                        ]);
+                                    } else if (request) {
+                                        promptAsync();
+                                    }
+                                }}
+                                disabled={!userToken && !request}
+                                className={`w-10 h-10 rounded-full items-center justify-center shadow-sm ${userToken ? 'bg-emerald-100' : (!request ? 'bg-slate-100' : 'bg-white/90')}`}
                             >
-                                <Text className="text-lg text-blue-600">
-                                    {playingId === e.id ? "⏹" : "▶️"}
-                                </Text>
+                                <Ionicons name="logo-google" size={18} color={userToken ? "#10B981" : "#475569"} />
                             </TouchableOpacity>
                         </View>
-                    ))}
-                    {entries.length === 0 && (
-                        <Text className="text-center text-slate-400 mt-10">No recordings yet.</Text>
-                    )}
-                </ScrollView>
-            </View>
+                    </View>
+
+                    {/* Top: Compact Stats */}
+                    <View className="px-4 mt-2">
+                        <ContributionGraph entries={entries} />
+                    </View>
+
+                    {/* Center: Transcription / Status Area */}
+                    <View className="flex-1 justify-center px-6 pb-4">
+                        {isRecording ? (
+                            <View className="bg-white/40 rounded-3xl backdrop-blur-sm border border-white/20 overflow-hidden w-full flex-1 max-h-[70%] min-h-[300px]">
+                                <ScrollView
+                                    ref={scrollViewRef}
+                                    contentContainerStyle={{ flexGrow: 1, padding: 24, justifyContent: 'center' }}
+                                    onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+                                    showsVerticalScrollIndicator={false}
+                                >
+                                    <Text className="text-center text-slate-800 text-2xl font-light leading-relaxed tracking-wide">
+                                        {realtimeText || "..."}
+                                    </Text>
+                                </ScrollView>
+                            </View>
+                        ) : (
+                            realtimeText === "" && (
+                                entries.length > 0 ? (
+                                    <View className="items-center w-full">
+                                        <Text className="text-slate-400 text-xs mb-4 font-medium tracking-widest uppercase opacity-80">最新のエントリー</Text>
+                                        <TouchableOpacity
+                                            onPress={() => router.push('/details')}
+                                            className="w-full bg-white/60 p-6 rounded-3xl shadow-sm backdrop-blur-md border border-white/40"
+                                            activeOpacity={0.7}
+                                        >
+                                            <View className="items-center justify-center">
+                                                {entries[0].text ? (
+                                                    <Text className="text-slate-700 text-lg font-medium text-center leading-relaxed">
+                                                        {entries[0].text.length > 50 ? entries[0].text.substring(0, 50) + '...' : entries[0].text}
+                                                    </Text>
+                                                ) : (
+                                                    <Ionicons name="mic-outline" size={32} color="#94A3B8" />
+                                                )}
+                                            </View>
+                                        </TouchableOpacity>
+                                    </View>
+                                ) : (
+                                    <View className="items-center opacity-60">
+                                        <Ionicons name="mic-outline" size={48} color="#94A3B8" style={{ marginBottom: 10 }} />
+                                        <Text className="text-slate-500 text-lg font-light tracking-widest">
+                                            あなたの声を記録しましょう
+                                        </Text>
+                                    </View>
+                                )
+                            )
+                        )}
+                    </View>
+
+                    {/* Bottom Center: Mic Button */}
+                    <View className="items-center justify-center pb-2">
+                        <NeumorphicMicButton
+                            isRecording={isRecording}
+                            onPress={handleToggleRecording}
+                        />
+                        <Text className="mt-4 text-xs font-medium text-slate-400 tracking-widest opacity-80">
+                            {isRecording ? "録音中" : "タップして録音"}
+                        </Text>
+                    </View>
+                </View>
+
+                {/* Bottom Controls */}
+                <KeyboardAvoidingView
+                    behavior={Platform.OS === "ios" ? "padding" : "height"}
+                    className="bg-transparent px-6 pb-6"
+                >
+                    <BottomInputBar
+                        value={inputText}
+                        onChangeText={setInputText}
+                        onSubmit={handleTextSubmit}
+                    />
+                </KeyboardAvoidingView>
+            </SafeAreaView>
         </View>
     );
 }
+
+const styles = StyleSheet.create({
+    // Keep any specific styles if needed, but Tailwind is used mostly
+});
