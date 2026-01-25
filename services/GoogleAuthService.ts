@@ -36,7 +36,16 @@ export const GoogleAuthService = {
     async getToken(): Promise<AuthToken | null> {
         const json = await SecureStore.getItemAsync(STORAGE_KEY);
         if (!json) return null;
-        return JSON.parse(json);
+        const token = JSON.parse(json);
+
+        // Check if expired (with 60s buffer)
+        // expiryDate is in seconds (from Google auth response), Date.now() is ms
+        if (token.expiryDate && (Date.now() / 1000) > (token.expiryDate - 60)) {
+            console.log("Token expired, removing...");
+            await this.logout();
+            return null;
+        }
+        return token;
     },
 
     async logout() {

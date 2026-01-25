@@ -25,6 +25,9 @@ export const GoogleDriveService = {
             const searchRes = await fetch(`${BASE_URL}/files?q=${encodeURIComponent(q)}`, { headers });
 
             if (!searchRes.ok) {
+                if (searchRes.status === 401) {
+                    throw new Error("TokenExpired");
+                }
                 console.error(`Drive Search Error: ${searchRes.status}`, await searchRes.text());
                 return null;
             }
@@ -65,7 +68,7 @@ export const GoogleDriveService = {
             if (!folderId) return { success: false, error: "Failed to find or create folder." };
 
             const token = await GoogleAuthService.getToken();
-            if (!token?.accessToken) return { success: false, error: "No access token found. Please reconnect." };
+            if (!token?.accessToken) return { success: false, error: "TokenExpired" };
 
             const fileName = uri.split('/').pop() || `recording-${Date.now()}.wav`;
             const isText = fileName.endsWith('.txt');
@@ -104,6 +107,9 @@ ${fileContent}
             });
 
             if (!res.ok) {
+                if (res.status === 401) {
+                    return { success: false, error: "TokenExpired" };
+                }
                 const text = await res.text();
                 console.error('Drive upload failed:', text);
                 return { success: false, error: `Upload API Error: ${res.status} ${text}` };

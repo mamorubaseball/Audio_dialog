@@ -64,7 +64,11 @@ export default function Home() {
             }
         };
         Voice.onSpeechError = (e: any) => {
-            console.error('Speech Error:', e);
+            console.error('Speech Error:', JSON.stringify(e, null, 2));
+            if (e.error?.message) {
+                // Common errors: "7/No match" (silence), "5/Client side error", "203/Retry"
+                setRealtimeText(`Error: ${e.error.message}`);
+            }
         };
 
         return () => {
@@ -132,25 +136,34 @@ export default function Home() {
 
                 // Auto-Upload
                 if (userToken) {
+                    const handleUploadResult = async (res: { success: boolean; error?: string }, type: string) => {
+                        if (!res.success) {
+                            if (res.error === "TokenExpired") {
+                                Alert.alert("Session Expired", "Please connect to Google Drive again.");
+                                await GoogleAuthService.logout();
+                                setUserToken(null);
+                            } else {
+                                Alert.alert(`Upload Error (${type})`, res.error || "Unknown error");
+                            }
+                            return false;
+                        }
+                        return true;
+                    };
+
                     // Upload Audio
                     const audioRes = await GoogleDriveService.uploadFile(result.uri);
-                    if (!audioRes.success) {
-                        Alert.alert("Upload Error (Audio)", audioRes.error || "Unknown error");
-                    }
+                    const audioSuccess = await handleUploadResult(audioRes, "Audio");
+                    if (!audioSuccess) return;
 
                     // Upload Text (if exists)
                     if (finalDocText.trim().length > 0) {
                         const txtPath = `${FileSystem.documentDirectory}transcription-${Date.now()}.txt`;
                         await FileSystem.writeAsStringAsync(txtPath, finalDocText, { encoding: 'utf8' });
                         const textRes = await GoogleDriveService.uploadFile(txtPath);
-
-                        if (!textRes.success) {
-                            Alert.alert("Upload Error (Text)", textRes.error || "Unknown error");
-                        }
+                        await handleUploadResult(textRes, "Text");
 
                         if (audioRes.success && textRes.success) {
                             console.log("Uploaded Audio & Text to Drive");
-                            // Optional: Alert.alert("Upload Complete", "Files saved to Drive!");
                         }
                     } else if (audioRes.success) {
                         console.log("Uploaded Audio to Drive");
