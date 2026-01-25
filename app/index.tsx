@@ -11,6 +11,7 @@ import { BlurView } from 'expo-blur';
 
 import { GoogleAuthService, AuthToken } from '../services/GoogleAuthService';
 import { GoogleDriveService } from '../services/GoogleDriveService';
+import { SyncService } from '../services/SyncService';
 import Voice from '@react-native-voice/voice';
 import * as FileSystem from 'expo-file-system/legacy'; // Use legacy for writeAsStringAsync
 
@@ -22,6 +23,7 @@ export default function Home() {
     const [sound, setSound] = useState<Audio.Sound | null>(null);
     const [playingId, setPlayingId] = useState<string | null>(null);
     const [userToken, setUserToken] = useState<AuthToken | null>(null);
+    const [syncing, setSyncing] = useState(false);
 
     // Transcription State
     const [transcribedText, setTranscribedText] = useState('');
@@ -134,41 +136,7 @@ export default function Home() {
                 loadEntries();
                 Alert.alert("Saved", "Voice diary saved successfully.");
 
-                // Auto-Upload
-                if (userToken) {
-                    const handleUploadResult = async (res: { success: boolean; error?: string }, type: string) => {
-                        if (!res.success) {
-                            if (res.error === "TokenExpired") {
-                                Alert.alert("Session Expired", "Please connect to Google Drive again.");
-                                await GoogleAuthService.logout();
-                                setUserToken(null);
-                            } else {
-                                Alert.alert(`Upload Error (${type})`, res.error || "Unknown error");
-                            }
-                            return false;
-                        }
-                        return true;
-                    };
-
-                    // Upload Audio
-                    const audioRes = await GoogleDriveService.uploadFile(result.uri);
-                    const audioSuccess = await handleUploadResult(audioRes, "Audio");
-                    if (!audioSuccess) return;
-
-                    // Upload Text (if exists)
-                    if (finalDocText.trim().length > 0) {
-                        const txtPath = `${FileSystem.documentDirectory}transcription-${Date.now()}.txt`;
-                        await FileSystem.writeAsStringAsync(txtPath, finalDocText, { encoding: 'utf8' });
-                        const textRes = await GoogleDriveService.uploadFile(txtPath);
-                        await handleUploadResult(textRes, "Text");
-
-                        if (audioRes.success && textRes.success) {
-                            console.log("Uploaded Audio & Text to Drive");
-                        }
-                    } else if (audioRes.success) {
-                        console.log("Uploaded Audio to Drive");
-                    }
-                }
+                // Auto-Upload Removed - Batch Sync is now used
             }
         } else {
             // Start
@@ -229,35 +197,71 @@ export default function Home() {
         }
     };
 
+    const handleSync = async () => {
+        if (!userToken) {
+            Alert.alert("Connect Drive", "Please connect to Google Drive first.");
+            return;
+        }
+
+        setSyncing(true);
+        try {
+            const { syncedCount, errors } = await SyncService.syncPendingEntries();
+
+            if (errors.length > 0) {
+                Alert.alert("Sync Completed with Errors", `Synced: ${syncedCount}\nErrors:\n${errors.slice(0, 3).join('\n')}`);
+            } else if (syncedCount > 0) {
+                Alert.alert("Sync Complete", `Successfully uploaded ${syncedCount} entries.`);
+            } else {
+                Alert.alert("Up to Date", "No new entries to sync.");
+            }
+            loadEntries(); // Refresh list to show synced status (if we add icon later)
+        } catch (e: any) {
+            Alert.alert("Sync Failed", e.message);
+        } finally {
+            setSyncing(false);
+        }
+    };
+
     return (
         <View className="flex-1 bg-[#F5F5FA] pt-12">
             <View className="flex-row justify-between items-center px-6 mb-4">
                 <Text className="text-2xl font-bold text-slate-800 tracking-wide">Voice Diary</Text>
-                <TouchableOpacity
-                    onPress={() => {
-                        if (userToken) {
-                            Alert.alert("Google Drive", "Status: Connected", [
-                                { text: "Cancel", style: "cancel" },
-                                {
-                                    text: "Disconnect",
-                                    style: "destructive",
-                                    onPress: async () => {
-                                        await GoogleAuthService.logout();
-                                        setUserToken(null);
-                                        Alert.alert("Disconnected", "Unlinked from Google Drive.");
+                <View className="flex-row gap-2">
+                    <TouchableOpacity
+                        onPress={handleSync}
+                        disabled={syncing}
+                        className={`px-3 py-1.5 rounded-full ${syncing ? 'bg-blue-100' : 'bg-blue-500'}`}
+                    >
+                        <Text className={`text-xs font-semibold ${syncing ? 'text-blue-400' : 'text-white'}`}>
+                            {syncing ? "Syncing..." : "Sync ☁️"}
+                        </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        onPress={() => {
+                            if (userToken) {
+                                Alert.alert("Google Drive", "Status: Connected", [
+                                    { text: "Cancel", style: "cancel" },
+                                    {
+                                        text: "Disconnect",
+                                        style: "destructive",
+                                        onPress: async () => {
+                                            await GoogleAuthService.logout();
+                                            setUserToken(null);
+                                            Alert.alert("Disconnected", "Unlinked from Google Drive.");
+                                        }
                                     }
-                                }
-                            ]);
-                        } else {
-                            promptAsync();
-                        }
-                    }}
-                    className={`px-3 py-1.5 rounded-full ${userToken ? 'bg-green-100' : 'bg-slate-200'}`}
-                >
-                    <Text className={`text-xs font-semibold ${userToken ? 'text-green-700' : 'text-slate-600'}`}>
-                        {userToken ? "Drive On ✅" : "Connect Drive"}
-                    </Text>
-                </TouchableOpacity>
+                                ]);
+                            } else {
+                                promptAsync();
+                            }
+                        }}
+                        className={`px-3 py-1.5 rounded-full ${userToken ? 'bg-green-100' : 'bg-slate-200'}`}
+                    >
+                        <Text className={`text-xs font-semibold ${userToken ? 'text-green-700' : 'text-slate-600'}`}>
+                            {userToken ? "Drive On ✅" : "Connect Drive"}
+                        </Text>
+                    </TouchableOpacity>
+                </View>
             </View>
 
             <View className="h-40 mx-4 bg-white rounded-2xl shadow-sm overflow-hidden mb-6">

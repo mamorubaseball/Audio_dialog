@@ -8,6 +8,7 @@ export interface Entry {
     audio_path: string;
     text?: string;
     created_at: string;
+    is_synced: number; // 0 = false, 1 = true
 }
 
 export const EntryService = {
@@ -17,7 +18,7 @@ export const EntryService = {
         const now = new Date().toISOString();
 
         await db.runAsync(
-            `INSERT INTO entries (id, date, duration, audio_path, text, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO entries (id, date, duration, audio_path, text, created_at, is_synced) VALUES (?, ?, ?, ?, ?, ?, 0)`,
             [id, now, duration, audioPath, text ?? null, now]
         );
         return id;
@@ -42,5 +43,15 @@ export const EntryService = {
     async deleteEntry(id: string) {
         const db = await getDb();
         await db.runAsync(`DELETE FROM entries WHERE id = ?`, [id]);
+    },
+
+    async getUnsyncedEntries() {
+        const db = await getDb();
+        return await db.getAllAsync<Entry>(`SELECT * FROM entries WHERE is_synced = 0`);
+    },
+
+    async markAsSynced(id: string) {
+        const db = await getDb();
+        await db.runAsync(`UPDATE entries SET is_synced = 1 WHERE id = ?`, [id]);
     }
 };

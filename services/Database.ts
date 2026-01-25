@@ -13,7 +13,15 @@ export const initDatabase = async () => {
             duration INTEGER NOT NULL,
             audio_path TEXT NOT NULL,
             text TEXT,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            is_synced INTEGER DEFAULT 0
         );
     `);
+
+    // Migration for existing tables
+    try {
+        await db.execAsync('ALTER TABLE entries ADD COLUMN is_synced INTEGER DEFAULT 0;');
+    } catch (e) {
+        // Ignore error if column already exists
+    }
 };
