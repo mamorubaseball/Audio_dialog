@@ -1,6 +1,5 @@
 import { GoogleAuthService } from './GoogleAuthService';
 import * as FileSystem from 'expo-file-system/legacy';
-// import { EncodingType } from 'expo-file-system'; // Not available in recent versions directly or causing issues, using string 'base64' is safer
 
 const BASE_URL = 'https://www.googleapis.com/drive/v3';
 const UPLOAD_URL = 'https://www.googleapis.com/upload/drive/v3/files';
@@ -114,6 +113,7 @@ export const GoogleDriveService = {
     },
 
     async uploadFile(uri: string, date: Date = new Date(), forceFileName?: string): Promise<{ success: boolean; error?: string }> {
+        console.log(`uploadFile called for uri: ${uri}`);
         try {
             const folderId = await this.findOrCreateDailyFolder(date);
             if (!folderId) return { success: false, error: "Failed to find or create folder." };

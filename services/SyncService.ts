@@ -4,6 +4,7 @@ import { GoogleDriveService } from './GoogleDriveService';
 
 export const SyncService = {
     async syncPendingEntries(): Promise<{ syncedCount: number; errors: string[] }> {
+        console.log("SyncService: start");
         const pendingEntries = await EntryService.getUnsyncedEntries();
         console.log(`Found ${pendingEntries.length} pending entries to sync.`);
 
@@ -28,6 +29,7 @@ export const SyncService = {
 
         // Process each day
         for (const dateStr of Object.keys(entriesByDate)) {
+            console.log(`Processing date: ${dateStr}`);
             const dailyEntries = entriesByDate[dateStr];
             // dateStr is already "2026-02-09" (JST representation)
             // When we pass this to Date, we want it to stay as is for the folder name
@@ -38,7 +40,7 @@ export const SyncService = {
             // "When uploading... combine into 1 file... store in 1 file"
             // If I only take pending items, and I overwrite the file, I lose previous items if they aren't in `dailyEntries`.
             // So I must fetch ALL entries for this date from DB.
-            const allEntriesForDay = await EntryService.getEntriesByDate(dateStr);
+            const allEntriesForDay = await EntryService.getEntriesForJSTDate(dateStr);
             // Sort by created_at
             allEntriesForDay.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
@@ -56,9 +58,20 @@ export const SyncService = {
             // Upload Text Summary
             if (aggregatedText.trim().length > 0) {
                 const summaryFileName = `${dateStr}-diary.txt`;
-                const txtPath = `${FileSystem.documentDirectory}${summaryFileName}`;
+                // Add slash if missing. documentDirectory is string | null
+                const docDir = FileSystem.documentDirectory?.endsWith('/') ? FileSystem.documentDirectory : `${FileSystem.documentDirectory}/`;
+
+                if (!docDir) {
+                    errors.push(`Document directory is null`);
+                    continue;
+                }
+
+                const txtPath = docDir + summaryFileName;
+
+                console.log(`Writing summary to: ${txtPath}`);
                 await FileSystem.writeAsStringAsync(txtPath, aggregatedText, { encoding: 'utf8' });
 
+                console.log(`Uploading summary: ${txtPath}`);
                 const textRes = await GoogleDriveService.uploadFile(txtPath, dateObj, summaryFileName);
                 await FileSystem.deleteAsync(txtPath, { idempotent: true });
 
@@ -74,6 +87,11 @@ export const SyncService = {
                     // Upload Audio
                     const fileInfo = await FileSystem.getInfoAsync(entry.audio_path);
                     if (fileInfo.exists) {
+                        if (fileInfo.isDirectory) {
+                            console.warn(`Skipping directory: ${entry.audio_path}`);
+                            continue;
+                        }
+
                         const audioRes = await GoogleDriveService.uploadFile(entry.audio_path, dateObj);
                         if (!audioRes.success) {
                             errors.push(`Audio upload failed for ${entry.id}: ${audioRes.error}`);
