@@ -1,4 +1,4 @@
-import { View, Text, FlatList, TouchableOpacity } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, Alert, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, Stack } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { EntryService, Entry } from '../services/EntryService';
@@ -47,33 +47,59 @@ export default function Details() {
     };
 
     return (
-        <View className="flex-1 bg-white p-4">
-            <Stack.Screen options={{ title: new Date(date!).toLocaleDateString() }} />
-
-            <FlatList
-                data={entries}
-                keyExtractor={i => i.id}
-                renderItem={({ item }) => (
-                    <View className="flex-row items-center justify-between p-4 bg-gray-50 mb-2 rounded-lg">
-                        <View>
-                            <Text className="font-semibold text-gray-800">
-                                {new Date(item.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </Text>
-                            <Text className="text-gray-500 text-xs">{item.id.slice(0, 8)}</Text>
-                        </View>
-
-                        <View className="flex-row items-center gap-4">
-                            <Text className="text-gray-600">{Math.round(item.duration)}s</Text>
-                            <TouchableOpacity onPress={() => playSound(item.audio_path, item.id)}>
-                                <Text className="text-2xl text-blue-500">
-                                    {playingId === item.id ? "⏹" : "▶️"}
-                                </Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                )}
-                ListEmptyComponent={<Text className="text-center text-gray-500 mt-10">No recordings for this day.</Text>}
+        <View className="flex-1 bg-[#F8FAFC]">
+            {/* Header / Title */}
+            <Stack.Screen
+                options={{
+                    title: date ? new Date(date).toLocaleDateString('ja-JP', { month: 'long', day: 'numeric', year: 'numeric' }) : '日記詳細',
+                    headerStyle: { backgroundColor: '#F8FAFC' },
+                    headerShadowVisible: false,
+                    headerTintColor: '#334155',
+                }}
             />
+
+            <ScrollView className="flex-1 px-4 py-2">
+                <View className="bg-white rounded-2xl shadow-sm p-6 mb-8 min-h-[500px]">
+                    <Text className="text-slate-400 text-xs font-bold tracking-widest uppercase mb-6 text-center">
+                        Daily Record
+                    </Text>
+
+                    {entries.length === 0 ? (
+                        <View className="items-center justify-center py-20">
+                            <Text className="text-slate-400">この日の記録はありません</Text>
+                        </View>
+                    ) : (
+                        entries.map((item, index) => (
+                            <View key={item.id} className="mb-6 border-b border-slate-100 last:border-0 pb-4 last:pb-0">
+                                <View className="flex-row items-center mb-2 justify-between">
+                                    <View className="flex-row items-center">
+                                        <View className="w-2 h-2 rounded-full bg-blue-400 mr-2" />
+                                        <Text className="text-slate-400 text-xs font-medium">
+                                            {new Date(item.date).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' })}
+                                        </Text>
+                                    </View>
+
+                                    <TouchableOpacity
+                                        onPress={() => playSound(item.audio_path, item.id)}
+                                        className={`w-8 h-8 rounded-full items-center justify-center ${playingId === item.id ? 'bg-red-50' : 'bg-slate-50'}`}
+                                    >
+                                        <Text className="text-sm">
+                                            {playingId === item.id ? "⏹" : "▶️"}
+                                        </Text>
+                                    </TouchableOpacity>
+                                </View>
+
+                                <Text className="text-slate-700 text-base leading-relaxed tracking-wide font-normal">
+                                    {item.text || "(音声のみ)"}
+                                </Text>
+                            </View>
+                        ))
+                    )}
+                </View>
+
+                {/* Bottom Spacer */}
+                <View className="h-10" />
+            </ScrollView>
         </View>
     );
 }
