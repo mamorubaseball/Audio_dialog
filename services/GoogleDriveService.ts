@@ -76,7 +76,17 @@ export const GoogleDriveService = {
         const rootId = await this.findOrCreateFolder(FOLDER_NAME);
         if (!rootId) return null;
 
-        const dateStr = date.toISOString().split('T')[0]; // YYYY-MM-DD
+        // Convert key date to JST string YYYY-MM-DD
+        // Note: 'date' argument here might already be 00:00:00 UTC if passed from SyncService
+        // But if passed as `new Date()` (current time), we need to shift.
+        // SyncService passes `new Date("2026-02-09")` -> 2026-02-09T00:00:00Z.
+        // If we shift that by +9h, it becomes 2026-02-09T09:00:00Z -> split -> 2026-02-09. Correct.
+        // If we pass `new Date()` (e.g. 2026-02-09 02:00 JST / 2026-02-08 17:00 UTC)
+        // Shift +9h -> 2026-02-09 02:00. split -> 2026-02-09. Correct.
+
+        const jstDate = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+        const dateStr = jstDate.toISOString().split('T')[0]; // YYYY-MM-DD
+
         return await this.findOrCreateFolder(dateStr, rootId);
     },
 

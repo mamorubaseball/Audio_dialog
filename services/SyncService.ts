@@ -10,10 +10,18 @@ export const SyncService = {
         let syncedCount = 0;
         const errors: string[] = [];
 
-        // Group by Date (YYYY-MM-DD)
+        // Helper to get JST YYYY-MM-DD
+        const getJSTDateStr = (isoString: string) => {
+            const date = new Date(isoString);
+            // Add 9 hours to get JST time in UTC representation
+            const jstDate = new Date(date.getTime() + 9 * 60 * 60 * 1000);
+            return jstDate.toISOString().split('T')[0];
+        };
+
+        // Group by Date (YYYY-MM-DD JST)
         const entriesByDate: { [date: string]: Entry[] } = {};
         for (const entry of pendingEntries) {
-            const dateStr = entry.date.split('T')[0];
+            const dateStr = getJSTDateStr(entry.date);
             if (!entriesByDate[dateStr]) entriesByDate[dateStr] = [];
             entriesByDate[dateStr].push(entry);
         }
@@ -21,10 +29,9 @@ export const SyncService = {
         // Process each day
         for (const dateStr of Object.keys(entriesByDate)) {
             const dailyEntries = entriesByDate[dateStr];
-            const dateObj = new Date(dateStr); // Local time might be an issue if ISO is UTC. 
-            // Assuming entry.date is ISO. 2026-01-25T...
-            // dateStr 2026-01-25 is basically UTC date.
-            // For now, let's treat it as the target folder name source.
+            // dateStr is already "2026-02-09" (JST representation)
+            // When we pass this to Date, we want it to stay as is for the folder name
+            const dateObj = new Date(dateStr);
 
             // 1. Prepare Aggregated Text
             // We need to fetch ALL entries for this day to rebuild the full diary?
@@ -37,7 +44,10 @@ export const SyncService = {
 
             const aggregatedText = allEntriesForDay
                 .map(e => {
-                    const time = new Date(e.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    // Display time in JST
+                    const d = new Date(e.date);
+                    // Force JST display
+                    const time = d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tokyo' });
                     const text = e.text ? e.text.trim() : "(No Text)";
                     return `[${time}]\n${text}\n`;
                 })

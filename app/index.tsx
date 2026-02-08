@@ -1,4 +1,4 @@
-import { View, Text, TouchableOpacity, ScrollView, Alert, Dimensions, StyleSheet, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Alert, Dimensions, StyleSheet, KeyboardAvoidingView, Platform, Keyboard, Modal, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState, useEffect, useRef } from 'react';
@@ -243,6 +243,28 @@ export default function Home() {
         }
     };
 
+    const [isKeyboardVisible, setKeyboardVisible] = useState(false);
+
+    useEffect(() => {
+        const keyboardDidShowListener = Keyboard.addListener(
+            'keyboardDidShow',
+            () => {
+                setKeyboardVisible(true);
+            }
+        );
+        const keyboardDidHideListener = Keyboard.addListener(
+            'keyboardDidHide',
+            () => {
+                setKeyboardVisible(false);
+            }
+        );
+
+        return () => {
+            keyboardDidHideListener.remove();
+            keyboardDidShowListener.remove();
+        };
+    }, []);
+
     return (
         <View className="flex-1 bg-[#F8FAFC]">
             {/* Premium Background Gradient */}
@@ -342,16 +364,18 @@ export default function Home() {
                         )}
                     </View>
 
-                    {/* Bottom Center: Mic Button */}
-                    <View className="items-center justify-center pb-2">
-                        <NeumorphicMicButton
-                            isRecording={isRecording}
-                            onPress={handleToggleRecording}
-                        />
-                        <Text className="mt-4 text-xs font-medium text-slate-400 tracking-widest opacity-80">
-                            {isRecording ? "録音中" : "タップして録音"}
-                        </Text>
-                    </View>
+                    {/* Bottom Center: Mic Button - Hidden when Keyboard is Visible */}
+                    {!isKeyboardVisible && (
+                        <View className="items-center justify-center pb-2">
+                            <NeumorphicMicButton
+                                isRecording={isRecording}
+                                onPress={handleToggleRecording}
+                            />
+                            <Text className="mt-4 text-xs font-medium text-slate-400 tracking-widest opacity-80">
+                                {isRecording ? "録音中" : "タップして録音"}
+                            </Text>
+                        </View>
+                    )}
                 </View>
 
                 {/* Bottom Controls */}
@@ -366,6 +390,20 @@ export default function Home() {
                     />
                 </KeyboardAvoidingView>
             </SafeAreaView>
+
+            {/* Syncing Overlay */}
+            <Modal
+                transparent={true}
+                visible={syncing}
+                animationType="fade"
+            >
+                <View className="flex-1 justify-center items-center bg-black/30 backdrop-blur-sm">
+                    <View className="bg-white p-6 rounded-2xl items-center shadow-lg w-48">
+                        <ActivityIndicator size="large" color="#3B82F6" />
+                        <Text className="mt-4 text-slate-600 font-medium">同期中...</Text>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 }
