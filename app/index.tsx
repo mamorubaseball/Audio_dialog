@@ -212,25 +212,61 @@ export default function Home() {
         }
     };
 
+    const [backgroundSyncing, setBackgroundSyncing] = useState(false);
+
     const handleSync = async () => {
         if (!userToken) {
             Alert.alert("Googleドライブ接続", "まずはGoogleドライブに接続してください。");
             return;
         }
 
-        setSyncing(true);
+        setSyncing(true); // Blocking UI
         try {
-            const { syncedCount, errors } = await SyncService.syncPendingEntries();
-
-            if (errors.length > 0) {
-                Alert.alert("同期エラー", `同期済み: ${syncedCount}件\nエラー:\n${errors.slice(0, 3).join('\n')}`);
-            } else if (syncedCount > 0) {
-                Alert.alert("同期完了", `${syncedCount}件の日記をドライブに保存しました。`);
-            } else {
+            // Step 1: Get Pending Entries
+            const pendingEntries = await SyncService.getPendingEntries();
+            if (pendingEntries.length === 0) {
                 Alert.alert("同期完了", "新しい日記はありません。");
+                setSyncing(false);
+                return;
             }
-            loadEntries();
+
+            // Step 2: Sync Text (Blocking)
+            const textRes = await SyncService.syncTextForPending(pendingEntries);
+
+            // Unblock UI immediately after text sync
+            setSyncing(false);
+
+            if (!textRes.success && textRes.errors.length > 0) {
+                Alert.alert("テキスト同期エラー", `日記の更新に失敗しました:\n${textRes.errors[0]}`);
+                // Should we continue to audio? Maybe yes.
+            } else {
+                // Optional: Toast or small message
+                // Alert.alert("同期中", "テキストを保存しました。音声のアップロードをバックグラウンドで続けます。");
+            }
+
+            // Step 3: Sync Audio (Background)
+            setBackgroundSyncing(true);
+            // Don't await this if we want it to be truly "background" from UI perspective, 
+            // but we need to manage state. We can use a promise chain.
+            SyncService.syncAudioForPending(pendingEntries)
+                .then(({ syncedCount, errors }) => {
+                    loadEntries(); // Reload to update sync status icons
+                    if (errors.length > 0) {
+                        console.warn("Audio sync errors:", errors);
+                    }
+                    if (syncedCount > 0) {
+                        // Maybe show a small completion toast if possible, or just silent
+                    }
+                })
+                .catch(e => {
+                    console.error("Background audio sync failed", e);
+                })
+                .finally(() => {
+                    setBackgroundSyncing(false);
+                });
+
         } catch (e: any) {
+            setSyncing(false);
             if (e.message && (e.message.includes('invalid') || e.message.includes('revoked') || e.message.includes('grant'))) {
                 Alert.alert("セッション期限切れ", "Googleドライブに再接続してください。", [
                     { text: "OK", onPress: () => { GoogleAuthService.logout(); setUserToken(null); } }
@@ -238,8 +274,6 @@ export default function Home() {
             } else {
                 Alert.alert("同期失敗", e.message);
             }
-        } finally {
-            setSyncing(false);
         }
     };
 
@@ -286,10 +320,14 @@ export default function Home() {
                         <View className="flex-row gap-4">
                             <TouchableOpacity
                                 onPress={handleSync}
-                                disabled={syncing}
-                                className={`w-10 h-10 rounded-full items-center justify-center shadow-sm ${syncing ? 'bg-blue-100' : 'bg-white/90'}`}
+                                disabled={syncing || backgroundSyncing}
+                                className={`w-10 h-10 rounded-full items-center justify-center shadow-sm ${syncing || backgroundSyncing ? 'bg-blue-100' : 'bg-white/90'}`}
                             >
-                                <Ionicons name={syncing ? "cloud-upload" : "cloud-outline"} size={20} color={syncing ? "#3B82F6" : "#475569"} />
+                                {backgroundSyncing ? (
+                                    <ActivityIndicator size="small" color="#3B82F6" />
+                                ) : (
+                                    <Ionicons name={syncing ? "cloud-upload" : "cloud-outline"} size={20} color={syncing ? "#3B82F6" : "#475569"} />
+                                )}
                             </TouchableOpacity>
 
                             <TouchableOpacity
